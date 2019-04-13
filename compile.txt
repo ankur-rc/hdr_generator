@@ -1,0 +1,7 @@
+/*
+ * Created Date: Friday April 12th 2019
+ * Last Modified: Friday April 12th 2019 1:18:32 am
+ * Author: ankurrc
+ */
+
+g++ --std=c++11 test.cpp -o test -lboost_system -lboost_filesystem -Wl,-v
