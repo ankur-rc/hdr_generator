@@ -7,35 +7,39 @@
 #include <iostream>
 #include <string>
 #include <boost/filesystem.hpp>
+#include <boost/algorithm/string.hpp>
 #include <vector>
-#include "include/utils.hpp"
+#include <math.h>
+#include <opencv2/opencv.hpp>
 
-static std::string imagesPath = "/media/ankurrc/new_volume/689_csce_comp_photo/hw4/StarterCode-04/Images/0_Calib_Chapel";
+#include "utils.hpp"
+
+static std::string imageDir = "/media/ankurrc/new_volume/689_csce_comp_photo/hw4/StarterCode-04/Images/0_Calib_Chapel";
 
 int main(int argc, char **argv)
 {
     using namespace std;
     using namespace boost::filesystem;
 
-    if (argc != 2)
-    {
-        cout << "Usage: ./main dir_path\n";
-        return 1;
-    }
+    // if (argc != 2)
+    // {
+    //     cout << "Usage: ./main dir_path\n";
+    //     return 1;
+    // }
 
     vector<path> imagePaths = {};
-    path dir(argv[1]);
+    path dir(imageDir);
 
     try
     {
-        imagePaths = u_utils::get_paths_in_directory(dir);
+        imagePaths = hdr::utils::get_paths_in_directory(dir);
+        hdr::utils::solve_lls(imagePaths);
     }
     catch (const filesystem_error &e)
     {
         cout << e.what() << '\n';
+        return 1;
     }
-    for (const auto &path : imagePaths)
-        cout << path << "\n ";
-    cout << "\n";
+
     return 0;
 }
