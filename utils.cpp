@@ -7,15 +7,19 @@
 #include <vector>
 #include <string>
 #include <iostream>
-#include <sstream>
 #include <math.h>
 #include <random>
 #include <utility>
-#include <algorithm>
+#include <fstream>
 
 #include <boost/filesystem.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/serialization/vector.hpp>
+
 #include <opencv2/opencv.hpp>
+
 #include <eigen3/Eigen/Dense>
 #include <eigen3/Eigen/Eigen>
 
@@ -54,7 +58,7 @@ vector<path> get_paths_in_directory(const path &dir) noexcept(false)
     return imagePaths;
 }
 
-void solve_lls(const vector<path> &imagePaths)
+vector<vector<float>> calibrate(const vector<path> &imagePaths)
 {
     // no. images
     const uint num_images = imagePaths.size();
@@ -64,8 +68,8 @@ void solve_lls(const vector<path> &imagePaths)
     // const uint N = 2 * static_cast<int>(ceilf(static_cast<float>(min_samples) / num_images));
     const uint N = 5 * min_samples;
 
-    cout << "Minimum Number of samples required for " << num_images << " images: " << min_samples
-         << "\nPer picture (min samples/P): " << N << "\n";
+    cout << "Minimum samples required (per image) for " << num_images << " images: " << min_samples
+         << "\nUsing per image: " << N / min_samples << "x" << min_samples << "=" << N << " samples\n";
 
     const uint n = Z_max - Z_min + 1;
 
@@ -174,18 +178,9 @@ void solve_lls(const vector<path> &imagePaths)
         // sort(results.begin(), results.end());
     }
 
-    vector<size_t> linspace(n);
-    iota(linspace.begin(), linspace.end(), 0);
+    plot_crf(results, {"blue", "green", "red"});
 
-    for (const auto &ch : CHANNELS)
-    {
-        uint ch_num = ch.second;
-        string ch_name = ch.first;
-        matplotlibcpp::plot(results[ch_num], linspace, "-");
-    }
-    // matplotlibcpp::plot(results[2], linspace);
-    matplotlibcpp::legend();
-    matplotlibcpp::show(true);
+    return results;
 }
 
 void show_image(const cv::Mat &img)
@@ -228,6 +223,127 @@ vector<pair<uint, uint>> get_random_indices(const int &num_rows, const int &num_
 uint hat(const uint &pixel)
 {
     return pixel <= (Z_max - Z_min + 1) / 2 ? pixel - Z_min : Z_max - pixel;
+}
+
+bool save_crf(const vector<vector<float>> &crfs, path &save_path)
+{
+    bool succeeded = false;
+    if (!save_path.is_absolute())
+        save_path = absolute(save_path);
+
+    cout << "Writing calibration files to " << save_path << endl;
+
+    if (!exists(save_path))
+    {
+        cout << "Directory " << save_path << " does not exist...";
+        if (create_directories(save_path))
+            cout << "created\n";
+        else
+        {
+            cout << "failed\n";
+            return false;
+        }
+    }
+    else
+    {
+        cout << "Directory " << save_path << " exists!\n";
+    }
+
+    try
+    {
+        int i = 0;
+        string extension = ".calib";
+        for (const auto &crf : crfs)
+        {
+            path path = save_path / string("channel_" + to_string(i) + extension);
+            cout << "Saving file: " << path << endl;
+            std::ofstream ofs(path.string());
+            boost::archive::text_oarchive oa(ofs);
+            oa &crf;
+            i++;
+        }
+
+        succeeded = true;
+    }
+    catch (...)
+    {
+        cout << "Exception occured while writing files...\n";
+        succeeded = false;
+    }
+
+    return succeeded;
+}
+
+bool load_crf(vector<vector<float>> &crfs, path &load_path)
+{
+    bool succeeded = false;
+    if (!load_path.is_absolute())
+        load_path = absolute(load_path);
+
+    cout << "Loading calibration files from " << load_path << endl;
+
+    if (!exists(load_path) || !is_directory(load_path))
+    {
+        cout << load_path << " is not a valid path to a directory.\n";
+        return false;
+    }
+
+    try
+    {
+        int i = 0;
+        string ext = ".calib";
+        vector<path> files;
+        for (const directory_entry &file : directory_iterator(load_path))
+        {
+            if (is_regular_file(file) && extension(file) == ext)
+            {
+                files.emplace_back(file);
+            }
+        }
+        std::sort(files.begin(), files.end());
+
+        for (const auto &file : files)
+        {
+            cout << "Loading file: " << file << endl;
+            vector<float> crf;
+            std::ifstream ifs(file.string());
+            boost::archive::text_iarchive ia(ifs);
+            ia &crf;
+            crfs.emplace_back(crf);
+            i++;
+        }
+
+        succeeded = true;
+    }
+    catch (...)
+    {
+        cout << "Exception occured while loadingfiles...\n";
+        succeeded = false;
+    }
+
+    return succeeded;
+}
+
+void plot_crf(const vector<vector<float>> &crfs, const vector<string> &names)
+{
+
+    assert(names.size() == crfs.size());
+
+    uint i = 0;
+    for (const auto &crf : crfs)
+    {
+        string ch_name = names[i];
+        vector<size_t> linspace(crf.size());
+        iota(linspace.begin(), linspace.end(), 0);
+        matplotlibcpp::figure();
+        matplotlibcpp::plot(crf, linspace, "bo");
+        matplotlibcpp::title(ch_name);
+        matplotlibcpp::xlabel("log exposure X");
+        matplotlibcpp::ylabel("pixel value z");
+        matplotlibcpp::show(false);
+        i++;
+    }
+    matplotlibcpp::show(true);
 }
 
 } // namespace utils

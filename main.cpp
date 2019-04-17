@@ -14,7 +14,8 @@
 
 #include "utils.hpp"
 
-static std::string imageDir = "/media/ankurrc/new_volume/689_csce_comp_photo/hw4/StarterCode-04/Images/0_Calib_Chapel";
+static std::wstring imageDir = L"/media/ankurrc/new_volume/689_csce_comp_photo/hw4/StarterCode-04/Images/0_Calib_Chapel";
+static std::wstring calibDir = L"/media/ankurrc/new_volume/689_csce_comp_photo/hw4/calib/0_Calib_Chapel";
 
 int main(int argc, char **argv)
 {
@@ -29,15 +30,27 @@ int main(int argc, char **argv)
 
     vector<path> imagePaths = {};
     path dir(imageDir);
+    path calDir(calibDir);
 
     try
     {
         imagePaths = hdr::utils::get_paths_in_directory(dir);
-        hdr::utils::solve_lls(imagePaths);
+        vector<vector<float>> crfs;
+        bool success;
+        // crfs = hdr::utils::calibrate(imagePaths);
+        // success = hdr::utils::save_crf(crfs, calDir);
+        // crfs.clear();
+        success = hdr::utils::load_crf(crfs, calDir);
+        hdr::utils::plot_crf(crfs, {"blue", "green", "red"});
     }
     catch (const filesystem_error &e)
     {
         cout << e.what() << '\n';
+        return 1;
+    }
+    catch (...)
+    {
+        cout << "Exception occured! Exiting...";
         return 1;
     }
 

@@ -25,7 +25,7 @@ set(Boost_USE_MULTITHREADED OFF)
 # set(Boost_DEBUG TRUE)
 set(Boost_DETAILED_FAILURE_MSG TRUE)
 
-find_package(Boost 1.69.0 EXACT REQUIRED COMPONENTS system filesystem)
+find_package(Boost 1.69.0 EXACT REQUIRED COMPONENTS system filesystem serialization)
 if (Boost_FOUND)
     message(STATUS "Boost_INCLUDE_DIRS: " ${Boost_INCLUDE_DIRS})  
     message(STATUS "Boost_INCLUDE_DIR:  " ${Boost_INCLUDE_DIR})     
@@ -37,7 +37,7 @@ target_include_directories(hdr PRIVATE ${Boost_INCLUDE_DIRS})
 target_link_libraries(hdr ${Boost_LIBRARIES})
 
 # OpenCV
-find_package(OpenCV 3.3 REQUIRED)
+find_package(OpenCV 3.3 REQUIRED core highgui) 
 target_include_directories(hdr PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(hdr ${OpenCV_LIBS})
 message(STATUS "OpenCV_INCLUDE_DIRS:    " ${OpenCV_INCLUDE_DIRS})

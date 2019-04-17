@@ -37,8 +37,8 @@ const map<uint, float> LAMBDAS = {
 // get all the image paths in the directory
 vector<path> get_paths_in_directory(const path &dir) noexcept(false);
 
-// solve for Ax=b
-void solve_lls(const vector<path> &paths);
+// get crf for camera calibration
+vector<vector<float>> calibrate(const vector<path> &paths);
 
 // show loaded image
 void show_image(const cv::Mat &img);
@@ -51,5 +51,14 @@ vector<pair<uint, uint>> get_random_indices(const int &num_rows, const int &num_
 
 // hat function
 uint hat(const uint &pixel);
+
+// save calibration into file
+bool save_crf(const vector<vector<float>> &crfs, path &save_path);
+
+// load calibration back into vector
+bool load_crf(vector<vector<float>> &crfs, path &load_path);
+
+// plot crf for different channels
+void plot_crf(const vector<vector<float>> &crf, const vector<string> &names);
 } // namespace utils
 } // namespace hdr
