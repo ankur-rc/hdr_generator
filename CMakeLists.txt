@@ -37,7 +37,7 @@ target_include_directories(hdr PRIVATE ${Boost_INCLUDE_DIRS})
 target_link_libraries(hdr ${Boost_LIBRARIES})
 
 # OpenCV
-find_package(OpenCV REQUIRED)
+find_package(OpenCV 3.3 REQUIRED)
 target_include_directories(hdr PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(hdr ${OpenCV_LIBS})
 message(STATUS "OpenCV_INCLUDE_DIRS:    " ${OpenCV_INCLUDE_DIRS})
@@ -47,6 +47,15 @@ message(STATUS "Opencv_LIBS:            " ${OpenCV_LIBS})
 # Eigen
 find_package(Eigen3 3.3 REQUIRED NO_MODULES)
 target_link_libraries(hdr Eigen3::Eigen)
+
+# Matplotlib-cpp
+find_package(PythonLibs 2.7)
+if (PYTHONLIBS_FOUND)
+    message(STATUS "PYTHON INCLUDE DIRS:" ${PYTHON_INCLUDE_DIRS})
+    message(STATUS "PYTHON LIBRARIES:" ${PYTHON_LIBRARIES})
+endif()
+target_include_directories(hdr PRIVATE ${PYTHON_INCLUDE_DIRS})
+target_link_libraries(hdr ${PYTHON_LIBRARIES})
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})

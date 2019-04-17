@@ -11,6 +11,7 @@
 #include <math.h>
 #include <random>
 #include <utility>
+#include <algorithm>
 
 #include <boost/filesystem.hpp>
 #include <boost/algorithm/string.hpp>
@@ -19,6 +20,7 @@
 #include <eigen3/Eigen/Eigen>
 
 #include "utils.hpp"
+#include "matplotlibcpp.h"
 
 namespace hdr
 {
@@ -26,19 +28,6 @@ namespace utils
 {
 using namespace boost::filesystem;
 using namespace std;
-
-// pixel intensity range
-static const uint8_t Z_min = 0, Z_max = 255;
-// holders for reconstructing E after CRF has been computed
-static vector<cv::Vec3b> Zij = {};
-static vector<float> Tij = {};
-
-// regularization parameter
-static const float lambda = 50.f;
-
-// random number seeding
-static random_device rd;      // obtain a random number from hardware
-static mt19937 rnd_eng(rd()); // seed the generator
 
 vector<path> get_paths_in_directory(const path &dir) noexcept(false)
 {
@@ -70,20 +59,39 @@ void solve_lls(const vector<path> &imagePaths)
     // no. images
     const uint num_images = imagePaths.size();
     // min. samples required
-    const uint min_samples = 10 * static_cast<int>(ceilf((Z_max - Z_min + 1) / (static_cast<float>(num_images) - 1)));
+    const uint min_samples = static_cast<int>(ceilf((Z_max - Z_min + 1) / (static_cast<float>(num_images) - 1)));
     // samples per image
-    const uint N = static_cast<int>(ceilf(static_cast<float>(min_samples) / num_images));
+    // const uint N = 2 * static_cast<int>(ceilf(static_cast<float>(min_samples) / num_images));
+    const uint N = 5 * min_samples;
 
     cout << "Minimum Number of samples required for " << num_images << " images: " << min_samples
          << "\nPer picture (min samples/P): " << N << "\n";
 
     const uint n = Z_max - Z_min + 1;
-    // construct A, b for Ax=b;
-    Eigen::MatrixXf A = Eigen::MatrixXf::Zero(N * num_images + n + 1, N + n);
-    Eigen::VectorXf b = Eigen::VectorXf::Zero(A.rows());
 
-    cout << "A (" << A.rows() << ", " << A.cols() << ")\t"
-         << "b (" << b.rows() << ", " << b.cols() << ")\n";
+    // setup image dimensions
+    // get the image
+    cv::Mat init_image = cv::imread(imagePaths[0].string(), cv::IMREAD_COLOR);
+    if (!init_image.data)
+        throw "No image data for " + imagePaths[0].string();
+
+    // sample the indices
+    vector<pair<uint, uint>> rnd_indices = get_random_indices(init_image.rows, init_image.cols, N);
+
+    vector<Eigen::MatrixXf> A(CHANNELS.size());
+    vector<Eigen::VectorXf> b(CHANNELS.size());
+
+    for (const auto &ch : CHANNELS)
+    {
+        // construct A, b for Ax=b;
+        uint ch_num = ch.second;
+        string ch_name = ch.first;
+        A[ch_num] = Eigen::MatrixXf::Zero(N * num_images + n + 1, N + n);
+        b[ch_num] = Eigen::VectorXf::Zero(A[ch_num].rows());
+
+        cout << "A [" << ch_name << "]:" << A[ch_num].rows() << "x" << A[ch_num].cols() << ")\t"
+             << "b [" << ch_name << "]:" << b[ch_num].rows() << "x" << b[ch_num].cols() << ")\n";
+    }
 
     // add entries to A & b
     size_t k = 0;
@@ -93,57 +101,91 @@ void solve_lls(const vector<path> &imagePaths)
 
         // get the exposure time
         float exposure_time = get_exposure_time(imgPath);
-        cout << "Exposure time: " << exposure_time << endl;
+        // cout << "Exposure time: " << exposure_time << endl;
 
         // get the image
         cv::Mat image = cv::imread(imgPath.string(), cv::IMREAD_COLOR);
         if (!image.data)
             throw "No image data for " + imgPath.string();
         //show_image(image);
-
-        // sample the indices
-        vector<pair<uint, uint>> indices = get_random_indices(image.rows, image.cols, N);
+        assert(init_image.size == image.size);
 
         // get the pixel values
-        for (size_t i = 0; i < indices.size(); i++)
+        for (size_t i = 0; i < rnd_indices.size(); i++)
         {
-            cv::Vec3b zij = image.at<cv::Vec3b>(indices[i].first, indices[i].second);
-            const uint pixel = zij[0];
-            const uint weight = hat(pixel);
+            cv::Vec3b zij = image.at<cv::Vec3b>(rnd_indices[i].first, rnd_indices[i].second);
 
-            // for g(wij)
-            A(k, pixel) = static_cast<float>(weight);
-            // for log(Ei)
-            A(k, n + i) = -static_cast<float>(weight);
+            for (const auto &ch : CHANNELS)
+            {
+                // construct A, b for Ax=b;
+                uint ch_num = ch.second;
+                string ch_name = ch.first;
 
-            b(k) = weight * log(exposure_time);
+                const uint pixel = zij[ch_num];
+                const uint weight = hat(pixel);
 
-            Zij.emplace_back(zij);
-            Tij.emplace_back(exposure_time);
+                // for g(wij)
+                A[ch_num](k, pixel) = static_cast<float>(weight);
+                // for log(Ei)
+                A[ch_num](k, n + i) = -static_cast<float>(weight);
+
+                b[ch_num](k) = weight * log(exposure_time);
+            }
 
             ++k;
         }
     }
 
     // fix the curve by setting middle value to 0
-    A(k++, n / 2) = 1.f;
+    for (const auto &ch : CHANNELS)
+    {
+        A[ch.second](k, n / 2) = 1.f;
+    }
+
+    ++k;
 
     // regularize; enforce smoothness
     for (size_t i = 0; i < n - 1; i++)
     {
-        size_t pos = i + 1;
-        uint weight = hat(pos);
-        A(k, i) = lambda * weight;
-        A(k, i + 1) = -2.f * lambda * weight;
-        A(k, i + 2) = lambda * weight;
+        for (const auto &ch : CHANNELS)
+        {
+            uint ch_num = ch.second;
+            float lambda = LAMBDAS.at(ch_num);
+            size_t pos = i + 1;
+            uint weight = hat(pos);
+            A[ch_num](k, i) = lambda * weight;
+            A[ch_num](k, i + 1) = -2.f * lambda * weight;
+            A[ch_num](k, i + 2) = lambda * weight;
+        }
         ++k;
     }
 
     // solve for x
-    Eigen::VectorXf x = A.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(b);
-    cout << "A:" << A << endl;
-    cout << "b:" << b << endl;
-    cout << "x:" << x.segment<n>(0) << endl;
+    vector<Eigen::VectorXf> x(CHANNELS.size());
+    vector<vector<float>> results(CHANNELS.size());
+
+    for (const auto &ch : CHANNELS)
+    {
+        uint ch_num = ch.second;
+        // Eigen::VectorXf x = A.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(b);
+        x[ch_num] = A[ch_num].householderQr().solve(b[ch_num]);
+        x[ch_num] = x[ch_num].segment<n>(0);
+        results[ch_num] = vector<float>(x[ch_num].data(), x[ch_num].data() + x[ch_num].size());
+        // sort(results.begin(), results.end());
+    }
+
+    vector<size_t> linspace(n);
+    iota(linspace.begin(), linspace.end(), 0);
+
+    for (const auto &ch : CHANNELS)
+    {
+        uint ch_num = ch.second;
+        string ch_name = ch.first;
+        matplotlibcpp::plot(results[ch_num], linspace, "-");
+    }
+    // matplotlibcpp::plot(results[2], linspace);
+    matplotlibcpp::legend();
+    matplotlibcpp::show(true);
 }
 
 void show_image(const cv::Mat &img)
@@ -185,7 +227,7 @@ vector<pair<uint, uint>> get_random_indices(const int &num_rows, const int &num_
 
 uint hat(const uint &pixel)
 {
-    return pixel < (Z_max - Z_min + 1) / 2 ? pixel : ((Z_max - Z_min + 1) / 2) - pixel;
+    return pixel <= (Z_max - Z_min + 1) / 2 ? pixel - Z_min : Z_max - pixel;
 }
 
 } // namespace utils
