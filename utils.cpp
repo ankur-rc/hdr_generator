@@ -18,10 +18,12 @@
 #include <boost/archive/text_iarchive.hpp>
 #include <boost/serialization/vector.hpp>
 
-#include <opencv2/opencv.hpp>
-
 #include <eigen3/Eigen/Dense>
 #include <eigen3/Eigen/Eigen>
+#include <eigen3/Eigen/Core>
+
+#include <opencv2/opencv.hpp>
+#include <opencv2/core/eigen.hpp>
 
 #include "utils.hpp"
 #include "matplotlibcpp.h"
@@ -35,31 +37,35 @@ using namespace std;
 
 vector<path> get_paths_in_directory(const path &dir) noexcept(false)
 {
-    path dirPath(dir);
-    vector<path> imagePaths = {};
-    cout << "Directory path is: " << dirPath.string() << "\n";
-    if (exists(dirPath))
+    path dir_path(dir);
+    vector<path> image_paths = {};
+    cout << "\nDirectory path is: " << dir_path.string() << "\n";
+    if (exists(dir_path))
     {
-        if (is_directory(dirPath))
+        if (is_directory(dir_path))
         {
-            for (const directory_entry &dirEntry : directory_iterator(dirPath))
+            for (const directory_entry &dir_entry : directory_iterator(dir_path))
             {
 
-                if (is_regular_file(dirEntry))
-                    imagePaths.emplace_back(dirEntry);
+                if (is_regular_file(dir_entry))
+                    image_paths.emplace_back(dir_entry);
             }
         }
     }
     else
     {
-        cout << dirPath << " does not exist.\n";
+        throw "does not exist.\n";
     }
 
-    return imagePaths;
+    cout << "Has " << image_paths.size() << " files.\n";
+
+    return image_paths;
 }
 
-vector<vector<float>> calibrate(const vector<path> &imagePaths)
+vector<vector<float>> calibrate(const vector<path> &imagePaths, const float &lambda)
 {
+
+    cout << "\n Calibrating...\n";
     // no. images
     const uint num_images = imagePaths.size();
     // min. samples required
@@ -79,6 +85,10 @@ vector<vector<float>> calibrate(const vector<path> &imagePaths)
     if (!init_image.data)
         throw "No image data for " + imagePaths[0].string();
 
+    double min, max;
+    cv::minMaxLoc(init_image, &min, &max);
+    cout << "Image channels, max, min: " << init_image.channels() << ", " << max << "," << min << endl;
+
     // sample the indices
     vector<pair<uint, uint>> rnd_indices = get_random_indices(init_image.rows, init_image.cols, N);
 
@@ -92,10 +102,10 @@ vector<vector<float>> calibrate(const vector<path> &imagePaths)
         string ch_name = ch.first;
         A[ch_num] = Eigen::MatrixXf::Zero(N * num_images + n + 1, N + n);
         b[ch_num] = Eigen::VectorXf::Zero(A[ch_num].rows());
-
-        cout << "A [" << ch_name << "]:" << A[ch_num].rows() << "x" << A[ch_num].cols() << ")\t"
-             << "b [" << ch_name << "]:" << b[ch_num].rows() << "x" << b[ch_num].cols() << ")\n";
     }
+
+    cout << "A: (" << A[0].rows() << "x" << A[0].cols() << "x" << A.size() << ")\t"
+         << "b: (" << b[0].rows() << "x" << b[0].cols() << "x" << b.size() << ")\n";
 
     // add entries to A & b
     size_t k = 0;
@@ -126,14 +136,14 @@ vector<vector<float>> calibrate(const vector<path> &imagePaths)
                 string ch_name = ch.first;
 
                 const uint pixel = zij[ch_num];
-                const uint weight = hat(pixel);
+                const float weight = static_cast<float>(hat(pixel));
 
                 // for g(wij)
-                A[ch_num](k, pixel) = static_cast<float>(weight);
+                A[ch_num](k, pixel) = weight;
                 // for log(Ei)
-                A[ch_num](k, n + i) = -static_cast<float>(weight);
+                A[ch_num](k, n + i) = -weight;
 
-                b[ch_num](k) = weight * log(exposure_time);
+                b[ch_num](k) = weight * logf(exposure_time);
             }
 
             ++k;
@@ -143,20 +153,19 @@ vector<vector<float>> calibrate(const vector<path> &imagePaths)
     // fix the curve by setting middle value to 0
     for (const auto &ch : CHANNELS)
     {
-        A[ch.second](k, n / 2) = 1.f;
+        A[ch.second](k, (n / 2)) = 1.f;
     }
 
     ++k;
 
     // regularize; enforce smoothness
-    for (size_t i = 0; i < n - 1; i++)
+    for (size_t i = 0; i <= n - 2; i++)
     {
         for (const auto &ch : CHANNELS)
         {
-            uint ch_num = ch.second;
-            float lambda = LAMBDAS.at(ch_num);
+            const uint ch_num = ch.second;
             size_t pos = i + 1;
-            uint weight = hat(pos);
+            const float weight = static_cast<float>(hat(pos));
             A[ch_num](k, i) = lambda * weight;
             A[ch_num](k, i + 1) = -2.f * lambda * weight;
             A[ch_num](k, i + 2) = lambda * weight;
@@ -173,7 +182,8 @@ vector<vector<float>> calibrate(const vector<path> &imagePaths)
         uint ch_num = ch.second;
         // Eigen::VectorXf x = A.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(b);
         x[ch_num] = A[ch_num].householderQr().solve(b[ch_num]);
-        x[ch_num] = x[ch_num].segment<n>(0);
+        // // x[ch_num] = x[ch_num].segment<n>(0);
+        x[ch_num].conservativeResize(n);
         results[ch_num] = vector<float>(x[ch_num].data(), x[ch_num].data() + x[ch_num].size());
         // sort(results.begin(), results.end());
     }
@@ -193,9 +203,9 @@ void show_image(const cv::Mat &img)
 float get_exposure_time(const path &imgPath)
 {
     string filename = imgPath.filename().string();
-    vector<string> parts = {};
+    vector<string> parts(2);
     boost::split(parts, filename, [](char c) { return c == '.'; });
-    vector<string> exposure_fraction = {};
+    vector<string> exposure_fraction(2);
     boost::split(exposure_fraction, parts[0], [](char c) { return c == '_'; });
     float numerator = stof(exposure_fraction[0]);
     float denominator = stof(exposure_fraction[1]);
@@ -231,7 +241,7 @@ bool save_crf(const vector<vector<float>> &crfs, path &save_path)
     if (!save_path.is_absolute())
         save_path = absolute(save_path);
 
-    cout << "Writing calibration files to " << save_path << endl;
+    cout << "\nWriting calibration files to " << save_path << endl;
 
     if (!exists(save_path))
     {
@@ -280,7 +290,7 @@ bool load_crf(vector<vector<float>> &crfs, path &load_path)
     if (!load_path.is_absolute())
         load_path = absolute(load_path);
 
-    cout << "Loading calibration files from " << load_path << endl;
+    cout << "\nLoading calibration files from " << load_path << endl;
 
     if (!exists(load_path) || !is_directory(load_path))
     {
@@ -344,6 +354,107 @@ void plot_crf(const vector<vector<float>> &crfs, const vector<string> &names)
         i++;
     }
     matplotlibcpp::show(true);
+}
+
+void generate_hdr(const vector<vector<float>> &crfs, path &image_dir)
+{
+    vector<path> image_paths = get_paths_in_directory(image_dir);
+    vector<cv::Mat> images;
+    vector<float> exposure_times;
+    for (const auto &img_path : image_paths)
+    {
+        cv::Mat image = cv::imread(img_path.string(), cv::IMREAD_COLOR);
+        // image.convertTo(image, 5);
+        float exposure_time = get_exposure_time(img_path);
+        images.emplace_back(image);
+        exposure_times.emplace_back(exposure_time);
+    }
+
+    vector<Eigen::MatrixXf> radiance_maps(images[0].channels());
+    vector<Eigen::MatrixXf> weight_accumulators(images[0].channels());
+    for (size_t i = 0; i < radiance_maps.size(); i++)
+    {
+        radiance_maps[i] = Eigen::MatrixXf::Zero(images[0].rows, images[0].cols);
+        weight_accumulators[i] = Eigen::MatrixXf::Zero(images[0].rows, images[0].cols);
+    }
+
+    uint j = 0;
+    for (const auto &image : images)
+    {
+        vector<cv::Mat> img_channels(images[0].channels());
+        cv::split(image, img_channels);
+        // loop over each channel
+        uint i = 0;
+        for (const auto &img : img_channels)
+        {
+            Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> radiance_map;
+            Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> weight_accumulator;
+            cv::cv2eigen(img, radiance_map);
+            cv::cv2eigen(img, weight_accumulator);
+            // cout << "Image map (min, max): " << radiance_map.minCoeff() << ", " << radiance_map.maxCoeff() << endl;
+            // g(Zij)
+            radiance_map = radiance_map.unaryExpr([&crfs, &i](float c) { 
+                float e = crfs[i][static_cast<int>(c)];
+                // cout << "taking Zij:" << c << " getting e: " << e <<endl;
+                return e; });
+            // cout << "Radiance map g(Zij) (min, max): " << radiance_map.minCoeff() << ", " << radiance_map.maxCoeff() << endl;
+            // g(Zij) - log(T)
+            radiance_map = (radiance_map.array() - logf(exposure_times[j])).matrix();
+            // cout << "Radiance map g(Zij)  - log(Tj) (min, max): " << radiance_map.minCoeff() << ", " << radiance_map.maxCoeff() << endl;
+            // W(Zij)
+            weight_accumulator = weight_accumulator.unaryExpr(ref(hat)).cast<float>();
+            // W(Zij)(g(Zij) - log(T))
+            radiance_map = radiance_map.cwiseProduct(weight_accumulator);
+            // if (i == 0)
+            //     cout << "Radiance map: T[" << j << "]: " << exposure_times[j] << " log(T): " << logf(exposure_times[j])
+            //          << " \n\tW(Zij)[g(Zij)  - log(Tj)] (min, max): " << radiance_map.minCoeff() << ", " << radiance_map.maxCoeff() << endl;
+            // // Accumulate W(Zij)
+            weight_accumulators[i] = weight_accumulators[i] + weight_accumulator;
+            // cout << "Accumulated weight for channel " << i << " (min, max): " << weight_accumulators[i].minCoeff() << ", " << weight_accumulators[i].maxCoeff() << endl;
+            // Accumulate W(Zij)(g(Zij) - log(T))
+            radiance_maps[i] = radiance_maps[i] + radiance_map;
+            // if (i == 0)
+            // cout << "Accumulated radiance W(Zij)(g(Zij) - log(T)) for channel " << i << " (min, max): " << radiance_maps[i].minCoeff() << ", " << radiance_maps[i].maxCoeff() << endl
+            //      << endl;
+
+            ++i;
+        }
+        ++j;
+    }
+
+    for (uint i = 0; i < radiance_maps.size(); i++)
+    {
+        float a = 0.1f;
+        radiance_maps[i] = radiance_maps[i].cwiseQuotient(weight_accumulators[i]);
+        // if (i == 0)
+        // {
+        // cout << "Radiance map W(Zij)(g(Zij) + log(T))/W(Zij)(min, max): " << radiance_maps[i].minCoeff() << ", " << radiance_maps[i].maxCoeff() << endl;
+        // cout << "Weights (min, max): " << weight_accumulators[i].minCoeff() << ", " << weight_accumulators[i].maxCoeff() << endl;
+        // }
+        radiance_maps[i] = radiance_maps[i].unaryExpr(ref(expf));
+        // if (i == 0)
+        cout << "Radiance map(E)-->" << i << " (min, max): " << radiance_maps[i].minCoeff() << ", " << radiance_maps[i].maxCoeff() << endl;
+
+        radiance_maps[i] = radiance_maps[i] * a;
+        // if (i == 0)
+        cout << "After a: Radiance map(E)-->" << i << " (min, max): " << radiance_maps[i].minCoeff() << ", " << radiance_maps[i].maxCoeff() << endl;
+
+        // tone map
+        radiance_maps[i] = radiance_maps[i].cwiseQuotient((radiance_maps[i].array() + 1.f).matrix());
+        // if (i == 0)
+        //     cout << "Radiance map(E/1+E)(min, max): " << radiance_maps[i].minCoeff() << ", " << radiance_maps[i].maxCoeff() << endl;
+    }
+
+    vector<cv::Mat> img_channels(images[0].channels());
+    for (size_t i = 0; i < radiance_maps.size(); i++)
+    {
+        cv::eigen2cv(radiance_maps[i], img_channels[i]);
+        show_image(img_channels[i]);
+    }
+
+    cv::Mat hdr_img;
+    cv::merge(img_channels, hdr_img);
+    show_image(hdr_img);
 }
 
 } // namespace utils

@@ -14,43 +14,61 @@
 
 #include "utils.hpp"
 
-static std::wstring imageDir = L"/media/ankurrc/new_volume/689_csce_comp_photo/hw4/StarterCode-04/Images/0_Calib_Chapel";
-static std::wstring calibDir = L"/media/ankurrc/new_volume/689_csce_comp_photo/hw4/calib/0_Calib_Chapel";
+// static std::wstring imageDir = L"/media/ankurrc/new_volume/689_csce_comp_photo/hw4/StarterCode-04/Images/0_Calib_Chapel";
+// static std::wstring calibDir = L"/media/ankurrc/new_volume/689_csce_comp_photo/hw4/calib/0_Calib_Chapel";
 
 int main(int argc, char **argv)
 {
     using namespace std;
     using namespace boost::filesystem;
 
-    // if (argc != 2)
-    // {
-    //     cout << "Usage: ./main dir_path\n";
-    //     return 1;
-    // }
+    if (argc < 5)
+    {
+        cout << "Usage: ./main dirpath calibdir calibflag lambda alpha\n";
+        return 1;
+    }
 
     vector<path> imagePaths = {};
-    path dir(imageDir);
-    path calDir(calibDir);
+
+    bool calibrate = stoi(argv[3]);
+    float lambda = stof(argv[4]);
+    path dir(argv[1]);
+    path calDir(argv[2]);
 
     try
     {
-        imagePaths = hdr::utils::get_paths_in_directory(dir);
         vector<vector<float>> crfs;
-        bool success;
-        // crfs = hdr::utils::calibrate(imagePaths);
-        // success = hdr::utils::save_crf(crfs, calDir);
-        // crfs.clear();
-        success = hdr::utils::load_crf(crfs, calDir);
-        hdr::utils::plot_crf(crfs, {"blue", "green", "red"});
+        if (calibrate)
+        {
+            imagePaths = hdr::utils::get_paths_in_directory(dir);
+            crfs = hdr::utils::calibrate(imagePaths, lambda);
+            if (!hdr::utils::save_crf(crfs, calDir))
+            {
+                cerr << "failed to save the calibration files!\n";
+                return 1;
+            }
+        }
+        else
+        {
+            if (!hdr::utils::load_crf(crfs, calDir))
+            {
+                cerr << "failed to load the calibration files!\n";
+                return 1;
+            }
+
+            hdr::utils::plot_crf(crfs, {"blue", "green", "red"});
+        }
+
+        hdr::utils::generate_hdr(crfs, dir);
     }
     catch (const filesystem_error &e)
     {
         cout << e.what() << '\n';
         return 1;
     }
-    catch (...)
+    catch (const exception &e)
     {
-        cout << "Exception occured! Exiting...";
+        cout << e.what() << "\nException occured! Exiting...\n";
         return 1;
     }
 

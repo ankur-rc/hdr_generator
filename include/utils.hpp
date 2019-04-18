@@ -16,49 +16,46 @@ namespace hdr
 {
 namespace utils
 {
-using namespace boost::filesystem;
-using namespace std;
 
 // pixel intensity range
 const uint8_t Z_min = 0, Z_max = 255;
 
 // random number seeding
-static random_device rd;      // obtain a random number from hardware
-static mt19937 rnd_eng(rd()); // seed the generator
+static std::random_device rd;      // obtain a random number from hardware
+static std::mt19937 rnd_eng(rd()); // seed the generator
 
 // name-channel map
-const map<string, uint> CHANNELS = {
+const std::map<std::string, uint> CHANNELS = {
     {"blue", 0}, {"green", 1}, {"red", 2}};
 
-// channel-lambda map
-const map<uint, float> LAMBDAS = {
-    {0, 6.f}, {1, 4.f}, {2, 6.f}};
-
 // get all the image paths in the directory
-vector<path> get_paths_in_directory(const path &dir) noexcept(false);
+std::vector<boost::filesystem::path> get_paths_in_directory(const boost::filesystem::path &dir) noexcept(false);
 
 // get crf for camera calibration
-vector<vector<float>> calibrate(const vector<path> &paths);
+std::vector<std::vector<float>> calibrate(const std::vector<boost::filesystem::path> &paths, const float& lambda);
 
 // show loaded image
 void show_image(const cv::Mat &img);
 
 // calculate exposure time from the path name
-float get_exposure_time(const path &imgPath);
+float get_exposure_time(const boost::filesystem::path &imgPath);
 
 // get random samples of indices(x, y) for extracting a random pixel
-vector<pair<uint, uint>> get_random_indices(const int &num_rows, const int &num_cols, const int &samples);
+std::vector<std::pair<uint, uint>> get_random_indices(const int &num_rows, const int &num_cols, const int &samples);
 
 // hat function
 uint hat(const uint &pixel);
 
 // save calibration into file
-bool save_crf(const vector<vector<float>> &crfs, path &save_path);
+bool save_crf(const std::vector<std::vector<float>> &crfs, boost::filesystem::path &save_path);
 
 // load calibration back into vector
-bool load_crf(vector<vector<float>> &crfs, path &load_path);
+bool load_crf(std::vector<std::vector<float>> &crfs, boost::filesystem::path &load_path);
 
 // plot crf for different channels
-void plot_crf(const vector<vector<float>> &crf, const vector<string> &names);
+void plot_crf(const std::vector<std::vector<float>> &crf, const std::vector<std::string> &names);
+
+// generate the radiance map
+void generate_hdr(const std::vector<std::vector<float>> &crf, boost::filesystem::path &image_dir);
 } // namespace utils
 } // namespace hdr
