@@ -6,6 +6,7 @@ enable_testing()
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -Wpedantic -Wextra")
+set(DEFAULT_BUILD_TYPE)
 
 # install prefix
 set(CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX} /usr/local")
@@ -25,7 +26,7 @@ set(Boost_USE_MULTITHREADED OFF)
 # set(Boost_DEBUG TRUE)
 set(Boost_DETAILED_FAILURE_MSG TRUE)
 
-find_package(Boost 1.69.0 EXACT REQUIRED COMPONENTS system filesystem serialization)
+find_package(Boost 1.69.0 REQUIRED COMPONENTS system filesystem serialization program_options)
 if (Boost_FOUND)
     message(STATUS "Boost_INCLUDE_DIRS: " ${Boost_INCLUDE_DIRS})  
     message(STATUS "Boost_INCLUDE_DIR:  " ${Boost_INCLUDE_DIR})     
@@ -37,7 +38,7 @@ target_include_directories(hdr PRIVATE ${Boost_INCLUDE_DIRS})
 target_link_libraries(hdr ${Boost_LIBRARIES})
 
 # OpenCV
-find_package(OpenCV 3.3 REQUIRED core highgui) 
+find_package(OpenCV 3.3 REQUIRED core highgui photo) 
 target_include_directories(hdr PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(hdr ${OpenCV_LIBS})
 message(STATUS "OpenCV_INCLUDE_DIRS:    " ${OpenCV_INCLUDE_DIRS})

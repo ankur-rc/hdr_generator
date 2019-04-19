@@ -193,11 +193,11 @@ vector<vector<float>> calibrate(const vector<path> &imagePaths, const float &lam
     return results;
 }
 
-void show_image(const cv::Mat &img)
+void show_image(const cv::Mat &img, const string &name, const float &wait = 0.0f)
 {
-    cv::namedWindow("Display Image", cv::WINDOW_AUTOSIZE);
-    cv::imshow("Display Image", img);
-    cv::waitKey(0);
+    cv::namedWindow(name, cv::WINDOW_AUTOSIZE);
+    cv::imshow(name, img);
+    cv::waitKey(wait);
 }
 
 float get_exposure_time(const path &imgPath)
@@ -356,8 +356,9 @@ void plot_crf(const vector<vector<float>> &crfs, const vector<string> &names)
     matplotlibcpp::show(true);
 }
 
-void generate_hdr(const vector<vector<float>> &crfs, path &image_dir)
+void generate_hdr(const vector<vector<float>> &crfs, path &image_dir, const float &alpha, const bool &cmp_opencv)
 {
+    cout << "\nGenerating using global tonemapper...\n";
     vector<path> image_paths = get_paths_in_directory(image_dir);
     vector<cv::Mat> images;
     vector<float> exposure_times;
@@ -424,7 +425,6 @@ void generate_hdr(const vector<vector<float>> &crfs, path &image_dir)
 
     for (uint i = 0; i < radiance_maps.size(); i++)
     {
-        float a = 0.1f;
         radiance_maps[i] = radiance_maps[i].cwiseQuotient(weight_accumulators[i]);
         // if (i == 0)
         // {
@@ -433,11 +433,11 @@ void generate_hdr(const vector<vector<float>> &crfs, path &image_dir)
         // }
         radiance_maps[i] = radiance_maps[i].unaryExpr(ref(expf));
         // if (i == 0)
-        cout << "Radiance map(E)-->" << i << " (min, max): " << radiance_maps[i].minCoeff() << ", " << radiance_maps[i].maxCoeff() << endl;
+        // cout << "Radiance map(E)-->" << i << " (min, max): " << radiance_maps[i].minCoeff() << ", " << radiance_maps[i].maxCoeff() << endl;
 
-        radiance_maps[i] = radiance_maps[i] * a;
+        radiance_maps[i] = radiance_maps[i] * alpha;
         // if (i == 0)
-        cout << "After a: Radiance map(E)-->" << i << " (min, max): " << radiance_maps[i].minCoeff() << ", " << radiance_maps[i].maxCoeff() << endl;
+        // cout << "After a: Radiance map(E)-->" << i << " (min, max): " << radiance_maps[i].minCoeff() << ", " << radiance_maps[i].maxCoeff() << endl;
 
         // tone map
         radiance_maps[i] = radiance_maps[i].cwiseQuotient((radiance_maps[i].array() + 1.f).matrix());
@@ -449,12 +449,34 @@ void generate_hdr(const vector<vector<float>> &crfs, path &image_dir)
     for (size_t i = 0; i < radiance_maps.size(); i++)
     {
         cv::eigen2cv(radiance_maps[i], img_channels[i]);
-        show_image(img_channels[i]);
+        //show_image(img_channels[i]);
     }
 
     cv::Mat hdr_img;
     cv::merge(img_channels, hdr_img);
-    show_image(hdr_img);
+    show_image(hdr_img, image_dir.remove_trailing_separator().filename().string() + string("_global"));
+
+    if (cmp_opencv)
+        compare_opencv(images, exposure_times, image_dir.remove_trailing_separator().filename().string() + string("_local"));
+}
+
+void compare_opencv(const vector<cv::Mat> &images, const vector<float> &exposure_times, const string &name)
+{
+    cout << "\nRunning local tonemapper....\n";
+    cv::Mat responseDebevec;
+    cv::Ptr<cv::CalibrateDebevec> calibrateDebevec = cv::createCalibrateDebevec();
+    calibrateDebevec->process(images, responseDebevec, exposure_times);
+
+    cv::Mat hdrDebevec;
+    cv::Ptr<cv::MergeDebevec> mergeDebevec = cv::createMergeDebevec();
+    mergeDebevec->process(images, hdrDebevec, exposure_times, responseDebevec);
+
+    cv::Mat ldrDurand;
+    cv::Ptr<cv::TonemapDurand> tonemapDurand = cv::createTonemapDurand(1.5, 4, 1.0, 1, 1);
+    tonemapDurand->process(hdrDebevec, ldrDurand);
+    ldrDurand = 3 * ldrDurand;
+
+    show_image(ldrDurand, name);
 }
 
 } // namespace utils

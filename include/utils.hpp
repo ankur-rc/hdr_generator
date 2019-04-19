@@ -12,6 +12,8 @@
 #include <iostream>
 #include <map>
 
+#include <opencv2/opencv.hpp>
+
 namespace hdr
 {
 namespace utils
@@ -32,7 +34,7 @@ const std::map<std::string, uint> CHANNELS = {
 std::vector<boost::filesystem::path> get_paths_in_directory(const boost::filesystem::path &dir) noexcept(false);
 
 // get crf for camera calibration
-std::vector<std::vector<float>> calibrate(const std::vector<boost::filesystem::path> &paths, const float& lambda);
+std::vector<std::vector<float>> calibrate(const std::vector<boost::filesystem::path> &paths, const float &lambda);
 
 // show loaded image
 void show_image(const cv::Mat &img);
@@ -56,6 +58,9 @@ bool load_crf(std::vector<std::vector<float>> &crfs, boost::filesystem::path &lo
 void plot_crf(const std::vector<std::vector<float>> &crf, const std::vector<std::string> &names);
 
 // generate the radiance map
-void generate_hdr(const std::vector<std::vector<float>> &crf, boost::filesystem::path &image_dir);
+void generate_hdr(const std::vector<std::vector<float>> &crf, boost::filesystem::path &image_dir, const float &alpha, const bool &cmp_opencv);
+
+// use opencv's debevec-durand algorithm
+void compare_opencv(const std::vector<cv::Mat> &images, const std::vector<float> &exposure_times, const std::string &name);
 } // namespace utils
 } // namespace hdr

@@ -6,34 +6,44 @@
 
 #include <iostream>
 #include <string>
-#include <boost/filesystem.hpp>
-#include <boost/algorithm/string.hpp>
 #include <vector>
 #include <math.h>
-#include <opencv2/opencv.hpp>
+
+#include <boost/filesystem.hpp>
+#include <boost/program_options.hpp>
 
 #include "utils.hpp"
-
-// static std::wstring imageDir = L"/media/ankurrc/new_volume/689_csce_comp_photo/hw4/StarterCode-04/Images/0_Calib_Chapel";
-// static std::wstring calibDir = L"/media/ankurrc/new_volume/689_csce_comp_photo/hw4/calib/0_Calib_Chapel";
 
 int main(int argc, char **argv)
 {
     using namespace std;
     using namespace boost::filesystem;
 
-    if (argc < 5)
+    if (argc < 7)
     {
-        cout << "Usage: ./main dirpath calibdir calibflag lambda alpha\n";
+        cout << R"(
+Generate HDR images from SDR images taken with different exposures
+Filenames should follow x_y_z.jpg format, where 'x' is name, 'y/z' is the exposure time.
+            
+    Usage: ./hdr dirpath calibdir calibflag lambda alpha
+            dirpath:    Path to images
+            calibdir:   Path to load/save calibration files
+            calibflag:  Flag to specify if we want to calibrate or not
+            lambda:     Regularization constant while calibrating
+            alpha:      Global tone-mapping constant
+            opencv_cmp: Compare with openCV's Debevec-Durand Algorithm
+    )";
         return 1;
     }
 
     vector<path> imagePaths = {};
 
-    bool calibrate = stoi(argv[3]);
-    float lambda = stof(argv[4]);
     path dir(argv[1]);
     path calDir(argv[2]);
+    bool calibrate = stoi(argv[3]);
+    float lambda = stof(argv[4]);
+    float alpha = stof(argv[5]);
+    bool cmp_opencv = stoi(argv[6]);
 
     try
     {
@@ -59,16 +69,22 @@ int main(int argc, char **argv)
             hdr::utils::plot_crf(crfs, {"blue", "green", "red"});
         }
 
-        hdr::utils::generate_hdr(crfs, dir);
+        hdr::utils::generate_hdr(crfs, dir, alpha, cmp_opencv);
     }
     catch (const filesystem_error &e)
     {
         cout << e.what() << '\n';
         return 1;
     }
-    catch (const exception &e)
+    catch (const char *e)
     {
-        cout << e.what() << "\nException occured! Exiting...\n";
+        cout << e << "\nException occured! Exiting...\n";
+        return 1;
+    }
+    catch (...)
+    {
+        exception_ptr e_ptr = current_exception();
+        cout << e_ptr.__cxa_exception_type() << "\nException occured! Exiting...\n";
         return 1;
     }
 
