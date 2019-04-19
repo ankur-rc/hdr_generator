@@ -13,3 +13,19 @@ Filenames should follow x_y_z.jpg format, where 'x' is name, 'y/z' is the exposu
             alpha:      Global tone-mapping constant
             opencv_cmp: Compare with openCV's Debevec-Durand Algorithm
 ```
+## Compile
+Run
+```
+$ mkdir <build_dir> && cd <build_cir> && cmake ..
+```
+
+To configure, run (from build directory):
+```
+$ ccmake .
+```
+
+## Depends on:
+- Eigen 3.3
+- Boost 1.69.0
+- Opencv 3.3.1
+- PythonLibs 2.7
